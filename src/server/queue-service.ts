@@ -28,7 +28,7 @@ type Tx = Prisma.TransactionClient;
 async function withQueueLock<T>(task: (tx: Tx) => Promise<T>): Promise<T> {
   return prisma.$transaction(
     async (tx) => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${QUEUE_LOCK_KEY})`;
+      // await tx.$executeRaw`SELECT pg_advisory_xact_lock(${QUEUE_LOCK_KEY})`;
       return task(tx);
     },
     { timeout: 15000, maxWait: 15000 },
