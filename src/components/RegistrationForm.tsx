@@ -128,7 +128,7 @@ export default function RegistrationForm({ values, errors, formError, submitting
             aria-invalid={errors.name ? true : undefined}
             aria-describedby={errors.name ? 'name-error' : undefined}
             className={`input ${errors.name ? 'input-error' : ''}`}
-            placeholder="例）近藤 秀樹"
+            placeholder="例）文溪　太郎"
           />
         </Field>
 
@@ -144,7 +144,7 @@ export default function RegistrationForm({ values, errors, formError, submitting
             aria-invalid={errors.department ? true : undefined}
             aria-describedby={errors.department ? 'department-error' : undefined}
             className={`input ${errors.department ? 'input-error' : ''}`}
-            placeholder="例）営業企画部"
+            placeholder="例）○○部"
           />
         </Field>
 
