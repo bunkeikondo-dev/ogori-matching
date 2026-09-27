@@ -1,0 +1,66 @@
+// おごり自販機マッチングシステム Prisma Schema (PostgreSQL / Supabase)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+/// トークテーマ（管理画面から追加・編集・削除）
+model TalkTheme {
+  id        Int      @id @default(autoincrement())
+  text      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// マッチ成立グループ（成立中データ。日次リセットで削除。履歴としては保持しない）
+model MatchGroup {
+  id        String       @id @default(cuid())
+  matchSize Int
+  themeText String
+  createdAt DateTime     @default(now())
+  entries   QueueEntry[]
+}
+
+/// 参加エントリー（status: WAITING=待機中 / MATCHED=成立済み）
+model QueueEntry {
+  id           String      @id @default(cuid())
+  /// 本人確認用の秘密トークン（マッチ結果の再取得・タイムアウト確認に使用。他者には公開しない）
+  token        String
+  name         String
+  department   String
+  /// TEAMS | EXTENSION
+  contactType  String
+  /// TEAMS: メールアドレス(小文字) / EXTENSION: 内線番号
+  contactValue String
+  /// 2 | 4
+  matchSize    Int
+  status       String      @default("WAITING")
+  joinedAt     DateTime    @default(now())
+  expiresAt    DateTime
+  matchGroupId String?
+  matchGroup   MatchGroup? @relation(fields: [matchGroupId], references: [id], onDelete: SetNull)
+
+  @@index([status, matchSize, joinedAt])
+  @@index([status, expiresAt])
+  @@index([matchGroupId])
+}
+
+/// 当日成立件数（日付キーはJSTの YYYY-MM-DD。日次リセットで過去日を削除）
+model DailyStat {
+  date           String @id
+  twoMatchCount  Int    @default(0)
+  fourMatchCount Int    @default(0)
+}
+
+/// 管理画面ログインのレート制限（サーバーレス環境ではプロセス内メモリを共有できないためDBで管理）
+model LoginAttempt {
+  ip      String   @id
+  count   Int      @default(0)
+  resetAt DateTime
+}
