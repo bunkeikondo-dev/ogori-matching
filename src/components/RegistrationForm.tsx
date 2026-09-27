@@ -196,7 +196,7 @@ export default function RegistrationForm({ values, errors, formError, submitting
                 aria-invalid={teamsError ? true : undefined}
                 aria-describedby={teamsError ? 'teamsId-error' : undefined}
                 className={`input min-w-0 flex-1 ${teamsError ? 'input-error' : ''}`}
-                placeholder="hideki.kondo"
+                placeholder="×××××"
               />
               <span className="shrink-0 text-sm font-semibold text-slate-600">@{TEAMS_DOMAIN}</span>
             </div>
