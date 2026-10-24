@@ -68,4 +68,3 @@ export default function MenuScreen() {
     </Container>
   );
 }
-__EOF__
