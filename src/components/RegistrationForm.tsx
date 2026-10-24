@@ -109,7 +109,7 @@ export default function RegistrationForm({
 
   const notes = [
     service ? `受付時間（${service.openTime}〜${service.closeTime}）内にお申し込みください` : '受付時間内にお申し込みください',
-    'マッチング結果は即時表示されます',
+    'マッチング結果は即時表示されます　マッチ成功後はチャットや内線で連絡を取り合ってください',
     '待機時間は最大15分ですが受付時間外になると強制終了します',
     '成立しない場合は別日に再度チャレンジしてください',
   ];
@@ -118,7 +118,7 @@ export default function RegistrationForm({
     <form onSubmit={handleSubmit} noValidate className="space-y-5">
       <section className="card">
         <h1 className="text-2xl font-bold text-brand-800">おごり自販機マッチング（{SITE_LABELS[site]}）</h1>
-        <p className="mt-3 font-medium text-slate-700">部署を越えたコミュニケーションを楽しみませんか？</p>
+        <p className="mt-3 font-medium text-slate-700">部署を越えたコミュニケーションを楽しみませんか？本日、自販機を利用できる方が参加します。</p>
         <ul className="mt-3 space-y-1.5 text-sm text-slate-600">
           {notes.map((note) => (
             <li key={note} className="flex gap-2">
