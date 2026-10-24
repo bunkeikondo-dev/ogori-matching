@@ -6,7 +6,12 @@ import { API_ROUTES, SITE_DESCRIPTIONS, SITE_LABELS, SITES } from '@/lib/constan
 import type { ServiceStatus, Site } from '@/lib/types';
 import { Container, Spinner } from './ui';
 
-export default function MenuScreen() {
+interface Props {
+  /** Vercelの環境変数 ENABLED_SITES で現在利用可能とされている拠点の一覧 */
+  enabledSites: Site[];
+}
+
+export default function MenuScreen({ enabledSites }: Props) {
   const [service, setService] = useState<ServiceStatus | null>(null);
 
   useEffect(() => {
@@ -48,16 +53,36 @@ export default function MenuScreen() {
       </section>
 
       <div className="mt-5 space-y-4">
-        {SITES.map((site: Site) => (
-          <a
-            key={site}
-            href={`/${site}`}
-            className="card block transition hover:border-brand-400 hover:shadow-md"
-          >
-            <p className="text-lg font-bold text-brand-800">{SITE_LABELS[site]}</p>
-            <p className="mt-1 text-sm text-slate-600">{SITE_DESCRIPTIONS[site]}</p>
-          </a>
-        ))}
+        {SITES.map((site: Site) => {
+          const enabled = enabledSites.includes(site);
+          if (!enabled) {
+            return (
+              <div
+                key={site}
+                aria-disabled="true"
+                className="card block cursor-not-allowed opacity-60"
+              >
+                <p className="flex items-center gap-2 text-lg font-bold text-slate-500">
+                  {SITE_LABELS[site]}
+                  <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-semibold text-slate-600">
+                    現在ご利用いただけません
+                  </span>
+                </p>
+                <p className="mt-1 text-sm text-slate-400">{SITE_DESCRIPTIONS[site]}</p>
+              </div>
+            );
+          }
+          return (
+            <a
+              key={site}
+              href={`/${site}`}
+              className="card block transition hover:border-brand-400 hover:shadow-md"
+            >
+              <p className="text-lg font-bold text-brand-800">{SITE_LABELS[site]}</p>
+              <p className="mt-1 text-sm text-slate-600">{SITE_DESCRIPTIONS[site]}</p>
+            </a>
+          );
+        })}
       </div>
 
       <div className="mt-6 text-center">
