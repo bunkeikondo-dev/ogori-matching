@@ -11,7 +11,7 @@ export default function TimeoutView({ onRetry }: Props) {
         ⌛
       </div>
       <h1 className="text-xl font-bold text-brand-800">今回はマッチングが成立しませんでした。</h1>
-      <p className="text-slate-600">時間をおいて再度チャレンジしてください。</p>
+      <p className="text-slate-600">別日に再度チャレンジしてください。</p>
       <p className="text-sm text-slate-500">受付時間内であれば何度でも参加できます。</p>
       <button type="button" onClick={onRetry} className="btn-primary w-full sm:w-auto">
         再度参加する
