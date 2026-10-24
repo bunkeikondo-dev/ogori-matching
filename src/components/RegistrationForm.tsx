@@ -108,7 +108,7 @@ export default function RegistrationForm({
   const selectSize = (matchSize: MatchSize) => onChange({ matchSize });
 
   const notes = [
-    service ? `受付時間（${service.openTime}〜${service.closeTime}）内に参加できる方のみお申し込みください` : '受付時間内に参加できる方のみお申し込みください',
+    service ? `受付時間（${service.openTime}〜${service.closeTime}）内にお申し込みください` : '受付時間内にお申し込みください',
     'マッチング結果は即時表示されます',
     '待機時間は最大15分です',
     '成立しない場合は再度チャレンジしてください',
