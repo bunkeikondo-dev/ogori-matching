@@ -2,6 +2,7 @@ import { errorResponse, jsonResponse, readJson, route } from '@/server/http';
 import { buildMatchResult, joinQueue } from '@/server/queue-service';
 import { broadcastMatchToEntry, broadcastQueueStatus } from '@/server/realtime';
 import { isSite, validateJoinInput } from '@/lib/validation';
+import { isSiteEnabled } from '@/server/site-config';
 import type { JoinAck } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
@@ -16,6 +17,14 @@ export const POST = route(async (request) => {
     typeof body === 'object' && body !== null ? (body as Record<string, unknown>).site : undefined;
   if (!isSite(site)) {
     return errorResponse('マッチングシステムの指定が不正です。', 400);
+  }
+  if (!isSiteEnabled(site)) {
+    const ack: JoinAck = {
+      ok: false,
+      code: 'CLOSED',
+      message: 'このマッチングシステムは現在ご利用いただけません。',
+    };
+    return jsonResponse(ack, 409);
   }
 
   const validation = validateJoinInput(body, site);
