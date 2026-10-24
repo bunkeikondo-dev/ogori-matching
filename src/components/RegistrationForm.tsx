@@ -110,8 +110,8 @@ export default function RegistrationForm({
   const notes = [
     service ? `受付時間（${service.openTime}〜${service.closeTime}）内にお申し込みください` : '受付時間内にお申し込みください',
     'マッチング結果は即時表示されます',
-    '待機時間は最大15分です',
-    '成立しない場合は再度チャレンジしてください',
+    '待機時間は最大15分ですが受付時間外になると強制終了します',
+    '成立しない場合は別日に再度チャレンジしてください',
   ];
 
   return (
