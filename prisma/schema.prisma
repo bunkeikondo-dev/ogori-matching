@@ -10,26 +10,34 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-/// トークテーマ（管理画面から追加・編集・削除）
+/// トークテーマ（管理画面から追加・編集・削除）。LIGHT=ライトトーク / DEEP=じっくりトーク
 model TalkTheme {
   id        Int      @id @default(autoincrement())
+  category  String
   text      String   @unique
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([category])
 }
 
 /// マッチ成立グループ（成立中データ。日次リセットで削除。履歴としては保持しない）
 model MatchGroup {
-  id        String       @id @default(cuid())
-  matchSize Int
-  themeText String
-  createdAt DateTime     @default(now())
-  entries   QueueEntry[]
+  id             String       @id @default(cuid())
+  /// gifu | tokyo | naibu
+  site           String
+  matchSize      Int
+  lightThemeText String
+  deepThemeText  String
+  createdAt      DateTime     @default(now())
+  entries        QueueEntry[]
 }
 
 /// 参加エントリー（status: WAITING=待機中 / MATCHED=成立済み）
 model QueueEntry {
   id           String      @id @default(cuid())
+  /// gifu | tokyo | naibu（システムごとに完全に独立したキュー）
+  site         String
   /// 本人確認用の秘密トークン（マッチ結果の再取得・タイムアウト確認に使用。他者には公開しない）
   token        String
   name         String
@@ -38,7 +46,7 @@ model QueueEntry {
   contactType  String
   /// TEAMS: メールアドレス(小文字) / EXTENSION: 内線番号
   contactValue String
-  /// 2 | 4
+  /// 2 | 4（naibuは2のみ）
   matchSize    Int
   status       String      @default("WAITING")
   joinedAt     DateTime    @default(now())
@@ -46,16 +54,19 @@ model QueueEntry {
   matchGroupId String?
   matchGroup   MatchGroup? @relation(fields: [matchGroupId], references: [id], onDelete: SetNull)
 
-  @@index([status, matchSize, joinedAt])
-  @@index([status, expiresAt])
+  @@index([site, status, matchSize, joinedAt])
+  @@index([site, status, expiresAt])
   @@index([matchGroupId])
 }
 
-/// 当日成立件数（日付キーはJSTの YYYY-MM-DD。日次リセットで過去日を削除）
+/// 当日成立件数（サイトごと・日付ごと。日次リセットで過去日を削除）
 model DailyStat {
-  date           String @id
+  date           String
+  site           String
   twoMatchCount  Int    @default(0)
   fourMatchCount Int    @default(0)
+
+  @@id([date, site])
 }
 
 /// 管理画面ログインのレート制限（サーバーレス環境ではプロセス内メモリを共有できないためDBで管理）

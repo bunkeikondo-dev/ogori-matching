@@ -1,12 +1,14 @@
 'use client';
 
 import type { FormEvent, ReactNode } from 'react';
-import { TEAMS_DOMAIN, TEAMS_DOMAIN_WARNING } from '@/lib/constants';
-import type { ContactType, FieldErrors, JoinFormValues, MatchSize } from '@/lib/types';
+import { SITE_LABELS, SITE_MATCH_SIZES, TEAMS_DOMAIN, TEAMS_DOMAIN_WARNING } from '@/lib/constants';
+import type { ContactType, FieldErrors, JoinFormValues, MatchSize, ServiceStatus, Site } from '@/lib/types';
 import { containsDomainInput } from '@/lib/validation';
 import { Alert, Spinner } from './ui';
 
 interface Props {
+  site: Site;
+  service: ServiceStatus | null;
   values: JoinFormValues;
   errors: FieldErrors;
   formError: string | null;
@@ -15,13 +17,10 @@ interface Props {
   onSubmit: () => void;
 }
 
-const NOTES = [
-  '本日15:00に参加できる方のみお申し込みください',
-  'マッチング結果は即時表示されます',
-  '待機時間は最大5分です',
-  '成立しない場合は再度チャレンジしてください。人数がいない場合は10：00または14：00にマッチングしてください。',
-  '受付時間は9:00〜15:00です',
-];
+const MATCH_SIZE_DESCRIPTION: Record<MatchSize, string> = {
+  2: '2名集まり次第すぐ成立',
+  4: '4名集まり次第すぐ成立',
+};
 
 interface OptionCardProps {
   name: string;
@@ -86,9 +85,19 @@ function Field({
   );
 }
 
-export default function RegistrationForm({ values, errors, formError, submitting, onChange, onSubmit }: Props) {
+export default function RegistrationForm({
+  site,
+  service,
+  values,
+  errors,
+  formError,
+  submitting,
+  onChange,
+  onSubmit,
+}: Props) {
   const domainTyped = containsDomainInput(values.teamsId);
   const teamsError = domainTyped ? TEAMS_DOMAIN_WARNING : errors.teamsId;
+  const availableSizes = SITE_MATCH_SIZES[site];
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -98,13 +107,20 @@ export default function RegistrationForm({ values, errors, formError, submitting
   const selectContact = (contactType: ContactType) => onChange({ contactType });
   const selectSize = (matchSize: MatchSize) => onChange({ matchSize });
 
+  const notes = [
+    service ? `受付時間（${service.openTime}〜${service.closeTime}）内に参加できる方のみお申し込みください` : '受付時間内に参加できる方のみお申し込みください',
+    'マッチング結果は即時表示されます',
+    '待機時間は最大15分です',
+    '成立しない場合は再度チャレンジしてください',
+  ];
+
   return (
     <form onSubmit={handleSubmit} noValidate className="space-y-5">
       <section className="card">
-        <h1 className="text-2xl font-bold text-brand-800">おごり自販機マッチング</h1>
+        <h1 className="text-2xl font-bold text-brand-800">おごり自販機マッチング（{SITE_LABELS[site]}）</h1>
         <p className="mt-3 font-medium text-slate-700">部署を越えたコミュニケーションを楽しみませんか？</p>
         <ul className="mt-3 space-y-1.5 text-sm text-slate-600">
-          {NOTES.map((note) => (
+          {notes.map((note) => (
             <li key={note} className="flex gap-2">
               <span className="text-brand-500" aria-hidden="true">
                 ・
@@ -220,37 +236,38 @@ export default function RegistrationForm({ values, errors, formError, submitting
           </Field>
         )}
 
-        <fieldset>
-          <legend className="label">
-            マッチ人数
-            <span className="ml-1 text-red-500" aria-hidden="true">
-              *
-            </span>
-          </legend>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <OptionCard
-              name="matchSize"
-              checked={values.matchSize === 2}
-              disabled={submitting}
-              label="2人でマッチ"
-              description="2名集まり次第すぐ成立"
-              onSelect={() => selectSize(2)}
-            />
-            <OptionCard
-              name="matchSize"
-              checked={values.matchSize === 4}
-              disabled={submitting}
-              label="4人でマッチ"
-              description="4名集まり次第すぐ成立"
-              onSelect={() => selectSize(4)}
-            />
-          </div>
-          {errors.matchSize ? (
-            <p className="field-error" role="alert">
-              {errors.matchSize}
-            </p>
-          ) : null}
-        </fieldset>
+        {availableSizes.length > 1 ? (
+          <fieldset>
+            <legend className="label">
+              マッチ人数
+              <span className="ml-1 text-red-500" aria-hidden="true">
+                *
+              </span>
+            </legend>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {availableSizes.map((size) => (
+                <OptionCard
+                  key={size}
+                  name="matchSize"
+                  checked={values.matchSize === size}
+                  disabled={submitting}
+                  label={`${size}人でマッチ`}
+                  description={MATCH_SIZE_DESCRIPTION[size]}
+                  onSelect={() => selectSize(size)}
+                />
+              ))}
+            </div>
+            {errors.matchSize ? (
+              <p className="field-error" role="alert">
+                {errors.matchSize}
+              </p>
+            ) : null}
+          </fieldset>
+        ) : (
+          <p className="text-sm font-medium text-slate-600">
+            このマッチングシステムは <span className="font-bold text-brand-700">{availableSizes[0]}人でマッチ</span> のみです。
+          </p>
+        )}
 
         {formError ? <Alert tone="error">{formError}</Alert> : null}
 
@@ -266,8 +283,11 @@ export default function RegistrationForm({ values, errors, formError, submitting
         </button>
       </section>
 
-      <div className="text-center">
-        <a href="/admin" className="text-sm font-medium text-brand-700 underline-offset-2 hover:underline">
+      <div className="flex justify-center gap-4 text-center text-sm">
+        <a href="/" className="font-medium text-brand-700 underline-offset-2 hover:underline">
+          メニューへ戻る
+        </a>
+        <a href="/admin" className="font-medium text-brand-700 underline-offset-2 hover:underline">
           管理画面
         </a>
       </div>

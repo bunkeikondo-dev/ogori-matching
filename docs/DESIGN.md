@@ -45,19 +45,22 @@ erDiagram
 
   MatchGroup {
     string id PK
+    string site "gifu / tokyo / naibu"
     int matchSize "2 or 4"
-    string themeText
+    string lightThemeText "ライトトークから1件"
+    string deepThemeText "じっくりトークから1件"
     datetime createdAt
   }
 
   QueueEntry {
     string id PK
+    string site "gifu / tokyo / naibu（完全に独立したキュー）"
     string token "本人確認用の秘密トークン"
     string name
     string department
     string contactType "TEAMS or EXTENSION"
     string contactValue
-    int matchSize "2 or 4"
+    int matchSize "2 or 4（naibuは2のみ）"
     string status "WAITING or MATCHED"
     datetime joinedAt
     datetime expiresAt
@@ -66,13 +69,15 @@ erDiagram
 
   TalkTheme {
     int id PK
+    string category "LIGHT or DEEP"
     string text UK
     datetime createdAt
     datetime updatedAt
   }
 
   DailyStat {
-    string date PK "JSTのYYYY-MM-DD"
+    string date PK1 "JSTのYYYY-MM-DD"
+    string site PK2 "gifu / tokyo / naibu"
     int twoMatchCount
     int fourMatchCount
   }
@@ -86,21 +91,25 @@ erDiagram
 
 > Docker版にあった `socketId` 列は不要になりました（接続の生存確認をSocket.IOに頼らないため）。
 > 代わりに `LoginAttempt` テーブルを追加しています（サーバーレスはプロセスをまたぐため、ログイン試行回数をメモリではなくDBで管理する必要があるため）。
+>
+> 岐阜用・東京用・部内用は `site` 列で完全に分離されたキューです。待機人数・マッチング候補・
+> 管理画面の集計は、すべて `site` で絞り込んだうえで行われます（日次リセットのみ全拠点が対象）。
 
 ## 3. 画面遷移図
 
 ```mermaid
 flowchart TD
-  START(["アクセス /"]) --> LOAD["読み込み中"]
+  MENU(["アクセス / (メニュー画面)"]) -->|"岐阜用 / 東京用 / 部内用を選択"| SITE["/[site] へ遷移"]
+  SITE --> LOAD["読み込み中"]
   LOAD -->|"成立済みセッションあり"| MATCHED
   LOAD -->|"受付時間内"| FORM["参加登録画面"]
   LOAD -->|"受付時間外"| CLOSED["受付時間外画面"]
-  CLOSED -->|"09:00 到達（自動切替）"| FORM
-  FORM -->|"15:00 到達（自動切替）"| CLOSED
+  CLOSED -->|"受付開始時刻 到達（自動切替）"| FORM
+  FORM -->|"受付終了時刻 到達（自動切替）"| CLOSED
 
   FORM -->|"参加する（POST /api/queue/join・エラー）"| FORM
   FORM -->|"参加する（成功・即成立）"| MATCHED["マッチ成立画面"]
-  FORM -->|"参加する（成功・待機）"| WAIT["待機画面<br/>カウントダウン 05:00〜"]
+  FORM -->|"参加する（成功・待機）"| WAIT["待機画面<br/>カウントダウン 15:00〜"]
 
   WAIT -->|"他者の参加でRealtime配信を受信"| MATCHED
   WAIT -->|"カウントダウンが0→POST /api/queue/timeout-check"| TIMEOUT["タイムアウト画面"]
@@ -111,14 +120,19 @@ flowchart TD
   TIMEOUT -->|"再度参加する"| FORM
   CANCELLED -->|"再度参加する"| FORM
   MATCHED -->|"トップに戻る"| FORM
-  MATCHED -->|"Teamsチャットを開く（全員Teamsのみ）"| TEAMS(["Teams"])
+  MATCHED -->|"Teamsチャットを開く（Teams利用者が2人以上）"| TEAMS(["Teams"])
 
-  FORM -->|"管理画面"| ALOGIN["管理画面ログイン"]
+  MENU -->|"管理画面"| ALOGIN["管理画面ログイン"]
+  FORM -->|"管理画面"| ALOGIN
   CLOSED -->|"管理画面"| ALOGIN
-  ALOGIN -->|"パスコード認証成功"| ADMIN["管理画面"]
+  ALOGIN -->|"パスコード認証成功"| ADMIN["管理画面（拠点タブで切替）"]
   ALOGIN -->|"認証失敗"| ALOGIN
   ADMIN -->|"ログアウト"| ALOGIN
 ```
+
+受付時間は既定で **9:30〜9:45**（`OPEN_TIME`/`CLOSE_TIME`で分単位の設定が可能）、待機タイムアウトは
+既定で **15分**（`WAIT_SECONDS=900`）です。集合日時・場所は固定せず、マッチ成立後に参加者同士で
+相談して決める運用のため、マッチ成立画面には日時・場所の案内を表示しません。
 
 ## 4. マッチング成立時のシーケンス
 
@@ -141,31 +155,42 @@ sequenceDiagram
 
 ## 5. API一覧
 
+`site` は `gifu` / `tokyo` / `naibu` のいずれか。参加者向けAPIのうち `join` はリクエストボディに
+`site` を含め、`status`・管理画面向けAPIはクエリパラメータ `?site=` で指定します
+（`leave`・`timeout-check`・`match/result` は `entryId`/`token` だけで拠点が一意に決まるため不要です）。
+
 | メソッド | パス | 認証 | 概要 |
 | --- | --- | --- | --- |
 | GET | `/api/health` | 不要 | ヘルスチェック（DB疎通確認） |
-| GET | `/api/service-status` | 不要 | 受付中/時間外の判定結果 |
-| GET | `/api/queue/status` | 不要 | 待機人数（2人 / 4人） |
-| POST | `/api/queue/join` | 不要 | 参加登録（Socket.IO版の`queue:join`相当） |
+| GET | `/api/service-status` | 不要 | 受付中/時間外の判定結果（全拠点共通） |
+| GET | `/api/queue/status?site=` | 不要 | 待機人数（2人 / 4人、拠点ごと） |
+| POST | `/api/queue/join` | 不要 | 参加登録（ボディに`site`を含む。Socket.IO版の`queue:join`相当） |
 | POST | `/api/queue/leave` | 本人トークン | 待機キャンセル・離脱通知（`sendBeacon`からも呼ばれる） |
 | POST | `/api/queue/timeout-check` | 本人トークン | 待機カウントダウン0時のサーバー側期限確認 |
 | GET | `/api/match/result?entryId=&token=` | 本人トークン | 成立済みマッチ結果の再取得 |
 | POST | `/api/admin/login` | 不要 | パスコード認証・セッションCookie発行 |
 | POST | `/api/admin/logout` | 不要 | セッションCookie破棄 |
 | GET | `/api/admin/session` | 不要 | ログイン状態の確認 |
-| GET | `/api/admin/dashboard` | 管理者 | 待機一覧・待機人数・当日成立件数 |
-| DELETE | `/api/admin/queue` | 管理者 | 全待機データ削除（緊急機能） |
-| GET/POST | `/api/admin/themes` | 管理者 | トークテーマ一覧・追加 |
+| GET | `/api/admin/dashboard?site=` | 管理者 | 指定した拠点の待機一覧・待機人数・当日成立件数 |
+| DELETE | `/api/admin/queue?site=` | 管理者 | 指定した拠点の全待機データ削除（緊急機能） |
+| GET | `/api/admin/themes` | 管理者 | トークテーマ一覧（ライト・じっくり両方。`category`フィールドで判別） |
+| POST | `/api/admin/themes` | 管理者 | トークテーマ追加（ボディに`category`と`text`） |
 | PUT/DELETE | `/api/admin/themes/:id` | 管理者 | トークテーマ編集・削除 |
-| GET/POST | `/api/cron/daily-reset` | `CRON_SECRET` | 日次リセット（Vercel Cronから毎日 15:00 UTC = 00:00 JST に起動） |
+| GET/POST | `/api/cron/daily-reset` | `CRON_SECRET` | 日次リセット（Vercel Cronから毎日 15:00 UTC = 00:00 JST に起動。全拠点対象） |
 
 ## Supabase Realtime チャンネル
 
 | チャンネル | イベント | 配信範囲 | 概要 |
 | --- | --- | --- | --- |
-| `queue-status` | `status` | 全員 | `{ two, four }` 待機人数のみ（個人情報なし） |
+| `queue-status-{site}` | `status` | 同じ拠点の全員 | `{ two, four }` 待機人数のみ（個人情報なし） |
 | `entry-{entryId}` | `match` | 本人のみ（購読者がentryIdを知っている前提） | マッチ成立時に他メンバーへ配信するMatchResult |
 | `entry-{entryId}` | `cancelled` | 本人のみ | 管理者削除・日次リセットによる取り消し通知 |
+
+## Teamsチャットボタンの表示条件
+
+マッチしたメンバーのうち **Teams利用者が2人以上** いればボタンを表示します（全員がTeamsである必要は
+ありません）。リンクの `users=` には自分以外のTeams利用者のみを含め、内線利用者はリンクに含められ
+ないため、画面側で「〇〇さんには別途連絡してください」という注記を表示します。
 
 `entryId`（cuid）は第三者が推測できない前提のPoC設計です。より厳格にするなら、Supabase Realtimeの
 Authorization機能（チャンネルごとのアクセス制御）を追加してください。

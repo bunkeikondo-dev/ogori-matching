@@ -1,5 +1,5 @@
-import MatchingApp from '@/components/MatchingApp';
+import MenuScreen from '@/components/MenuScreen';
 
 export default function HomePage() {
-  return <MatchingApp />;
+  return <MenuScreen />;
 }

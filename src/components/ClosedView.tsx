@@ -1,23 +1,25 @@
 'use client';
 
-import type { ServiceStatus } from '@/lib/types';
+import { SITE_LABELS } from '@/lib/constants';
+import type { ServiceStatus, Site } from '@/lib/types';
 
 interface Props {
   status: ServiceStatus | null;
+  site: Site;
 }
 
-export default function ClosedView({ status }: Props) {
-  const openHour = status?.openHour ?? 9;
-  const closeHour = status?.closeHour ?? 15;
+export default function ClosedView({ status, site }: Props) {
+  const openTime = status?.openTime ?? '09:30';
+  const closeTime = status?.closeTime ?? '09:45';
 
   let headline = '本日の受付は終了しました。';
-  let followUp = `翌営業日${openHour}:00より受付を再開します。`;
+  let followUp = `翌営業日${openTime}より受付を再開します。`;
   if (status?.reason === 'BEFORE_OPEN') {
     headline = 'ただいまの時間は受付時間外です。';
-    followUp = `本日${openHour}:00より受付を開始します。`;
+    followUp = `本日${openTime}より受付を開始します。`;
   } else if (status?.reason === 'NON_BUSINESS_DAY') {
     headline = '本日は受付を行っておりません。';
-    followUp = `翌営業日${openHour}:00より受付を開始します。`;
+    followUp = `翌営業日${openTime}より受付を開始します。`;
   }
 
   return (
@@ -26,17 +28,21 @@ export default function ClosedView({ status }: Props) {
         <div className="text-5xl" aria-hidden="true">
           🌙
         </div>
+        <p className="text-sm font-semibold text-brand-600">{SITE_LABELS[site]}</p>
         <h1 className="text-xl font-bold text-brand-800">{headline}</h1>
         <div className="rounded-xl bg-brand-50 px-4 py-3">
           <p className="text-xs font-semibold text-brand-700">受付時間</p>
           <p className="text-2xl font-bold text-brand-900">
-            {openHour}:00〜{closeHour}:00
+            {openTime}〜{closeTime}
           </p>
         </div>
         <p className="text-slate-600">{followUp}</p>
       </section>
-      <div className="text-center">
-        <a href="/admin" className="text-sm font-medium text-brand-700 underline-offset-2 hover:underline">
+      <div className="flex justify-center gap-4 text-center text-sm">
+        <a href="/" className="font-medium text-brand-700 underline-offset-2 hover:underline">
+          メニューへ戻る
+        </a>
+        <a href="/admin" className="font-medium text-brand-700 underline-offset-2 hover:underline">
           管理画面
         </a>
       </div>

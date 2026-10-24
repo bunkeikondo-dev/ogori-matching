@@ -1,5 +1,9 @@
-import { TEAMS_DOMAIN, TEAMS_DOMAIN_WARNING, TEXT_MAX_LENGTH } from './constants';
-import type { ContactType, FieldErrors, JoinInput, MatchSize } from './types';
+import { SITE_MATCH_SIZES, SITES, TEAMS_DOMAIN, TEAMS_DOMAIN_WARNING, TEXT_MAX_LENGTH } from './constants';
+import type { ContactType, FieldErrors, JoinInput, MatchSize, Site } from './types';
+
+export function isSite(value: unknown): value is Site {
+  return typeof value === 'string' && (SITES as readonly string[]).includes(value);
+}
 
 const CONTROL_CHARS = /[\u0000-\u001F\u007F]/;
 const TEAMS_ID_PATTERN = /^[A-Za-z0-9._-]+$/;
@@ -19,8 +23,12 @@ export type JoinValidationResult =
   | { ok: true; data: JoinInput }
   | { ok: false; errors: FieldErrors };
 
-/** 参加フォームの検証・正規化。クライアントとサーバーで共通利用する。 */
-export function validateJoinInput(raw: unknown): JoinValidationResult {
+/**
+ * 参加フォームの検証・正規化。クライアントとサーバーで共通利用する。
+ * site はURLから決まる値のため、クライアントは常に正しい値を送る前提だが、
+ * サーバー側では不正な値・許可されないマッチ人数の組み合わせを必ず弾く（多層防御）。
+ */
+export function validateJoinInput(raw: unknown, site: Site): JoinValidationResult {
   const source = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
   const errors: FieldErrors = {};
 
@@ -78,16 +86,19 @@ export function validateJoinInput(raw: unknown): JoinValidationResult {
     }
   }
 
-  // マッチ人数
+  // マッチ人数（サイトごとに選べる人数が異なる。例：部内用は2人のみ）
   const sizeNumber = Number(source.matchSize);
-  const matchSize: MatchSize | null = sizeNumber === 2 ? 2 : sizeNumber === 4 ? 4 : null;
+  let matchSize: MatchSize | null = sizeNumber === 2 ? 2 : sizeNumber === 4 ? 4 : null;
   if (matchSize === null) {
     errors.matchSize = 'マッチ人数を選択してください。';
+  } else if (!SITE_MATCH_SIZES[site].includes(matchSize)) {
+    errors.matchSize = 'このマッチングシステムでは選択できない人数です。';
+    matchSize = null;
   }
 
   if (Object.keys(errors).length > 0 || contactType === null || matchSize === null) {
     return { ok: false, errors };
   }
 
-  return { ok: true, data: { name, department, contactType, contactValue, matchSize } };
+  return { ok: true, data: { name, department, contactType, contactValue, matchSize, site } };
 }

@@ -46,9 +46,9 @@ export const POST = route(async (request) => {
     return errorResponse('リクエストが不正です。', 400);
   }
 
-  const removed = await leaveByToken(payload.entryId, payload.token);
-  if (removed) {
-    await broadcastQueueStatus();
+  const { removed, site } = await leaveByToken(payload.entryId, payload.token);
+  if (removed && site) {
+    await broadcastQueueStatus(site);
   }
   return jsonResponse({ ok: true });
 });

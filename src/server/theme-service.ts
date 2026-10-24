@@ -1,6 +1,6 @@
 import { THEME_MAX_LENGTH } from '@/lib/constants';
 import { prisma } from '@/lib/prisma';
-import type { TalkThemeDto } from '@/lib/types';
+import type { TalkThemeDto, ThemeCategory } from '@/lib/types';
 
 export type ThemeValidation = { ok: true; text: string } | { ok: false; message: string };
 
@@ -12,6 +12,10 @@ export class ThemeError extends Error {
     this.name = 'ThemeError';
     this.status = status;
   }
+}
+
+export function isThemeCategory(value: unknown): value is ThemeCategory {
+  return value === 'LIGHT' || value === 'DEEP';
 }
 
 export function validateThemeText(raw: unknown): ThemeValidation {
@@ -36,23 +40,31 @@ function errorCode(error: unknown): string | null {
   return null;
 }
 
-function toDto(theme: { id: number; text: string; createdAt: Date; updatedAt: Date }): TalkThemeDto {
+function toDto(theme: {
+  id: number;
+  category: string;
+  text: string;
+  createdAt: Date;
+  updatedAt: Date;
+}): TalkThemeDto {
   return {
     id: theme.id,
+    category: theme.category as ThemeCategory,
     text: theme.text,
     createdAt: theme.createdAt.toISOString(),
     updatedAt: theme.updatedAt.toISOString(),
   };
 }
 
+/** ライトトーク・じっくりトーク両方をまとめて返す（画面側でカテゴリごとにタブ分けする） */
 export async function listThemes(): Promise<TalkThemeDto[]> {
-  const themes = await prisma.talkTheme.findMany({ orderBy: { id: 'asc' } });
+  const themes = await prisma.talkTheme.findMany({ orderBy: [{ category: 'asc' }, { id: 'asc' }] });
   return themes.map(toDto);
 }
 
-export async function createTheme(text: string): Promise<TalkThemeDto> {
+export async function createTheme(category: ThemeCategory, text: string): Promise<TalkThemeDto> {
   try {
-    return toDto(await prisma.talkTheme.create({ data: { text } }));
+    return toDto(await prisma.talkTheme.create({ data: { category, text } }));
   } catch (error) {
     if (errorCode(error) === 'P2002') {
       throw new ThemeError('同じトークテーマが既に登録されています。', 409);
@@ -61,9 +73,9 @@ export async function createTheme(text: string): Promise<TalkThemeDto> {
   }
 }
 
-export async function updateTheme(id: number, text: string): Promise<TalkThemeDto> {
+export async function updateTheme(id: number, category: ThemeCategory, text: string): Promise<TalkThemeDto> {
   try {
-    return toDto(await prisma.talkTheme.update({ where: { id }, data: { text } }));
+    return toDto(await prisma.talkTheme.update({ where: { id }, data: { category, text } }));
   } catch (error) {
     const code = errorCode(error);
     if (code === 'P2002') {

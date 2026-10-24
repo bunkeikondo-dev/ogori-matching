@@ -2,10 +2,10 @@ import {
   ENTRY_CANCELLED_EVENT,
   ENTRY_MATCH_EVENT,
   entryChannelName,
-  QUEUE_STATUS_CHANNEL,
+  queueStatusChannelName,
   QUEUE_STATUS_EVENT,
 } from '@/lib/realtime-channels';
-import type { MatchResult } from '@/lib/types';
+import type { MatchResult, Site } from '@/lib/types';
 import { getQueueStatus } from './queue-service';
 import { getSupabaseAdmin } from './supabase-admin';
 
@@ -30,11 +30,11 @@ async function send(channelName: string, event: string, payload: unknown): Promi
   }
 }
 
-/** 待機人数（全体配信・個人情報なし） */
-export async function broadcastQueueStatus(): Promise<void> {
+/** 待機人数（拠点ごとに全体配信・個人情報なし） */
+export async function broadcastQueueStatus(site: Site): Promise<void> {
   try {
-    const status = await getQueueStatus();
-    await send(QUEUE_STATUS_CHANNEL, QUEUE_STATUS_EVENT, status);
+    const status = await getQueueStatus(site);
+    await send(queueStatusChannelName(site), QUEUE_STATUS_EVENT, status);
   } catch (error) {
     console.error('[realtime] 待機人数の配信に失敗しました。', error);
   }

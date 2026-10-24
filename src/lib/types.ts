@@ -1,5 +1,7 @@
 export type ContactType = 'TEAMS' | 'EXTENSION';
 export type MatchSize = 2 | 4;
+export type Site = 'gifu' | 'tokyo' | 'naibu';
+export type ThemeCategory = 'LIGHT' | 'DEEP';
 
 /** フォームの入力値（生データ） */
 export interface JoinFormValues {
@@ -19,6 +21,7 @@ export interface JoinInput {
   /** TEAMS: メールアドレス（小文字・ドメイン付与済み） / EXTENSION: 内線番号 */
   contactValue: string;
   matchSize: MatchSize;
+  site: Site;
 }
 
 export type JoinField =
@@ -47,9 +50,12 @@ export interface MatchMember {
 export interface MatchResult {
   matchId: string;
   matchSize: MatchSize;
-  themeText: string;
+  /** ライトトークから1件ランダムに選ばれたテーマ */
+  lightThemeText: string;
+  /** じっくりトークから1件ランダムに選ばれたテーマ */
+  deepThemeText: string;
   members: MatchMember[];
-  /** 全員がTeams利用者の場合のみ設定 */
+  /** Teams利用者が2人以上いる場合のみ設定（リンクには自分以外のTeams利用者のみを含む） */
   teamsLink: string | null;
 }
 
@@ -94,8 +100,10 @@ export type ClosedReason = 'BEFORE_OPEN' | 'AFTER_CLOSE' | 'NON_BUSINESS_DAY';
 export interface ServiceStatus {
   open: boolean;
   reason: ClosedReason | null;
-  openHour: number;
-  closeHour: number;
+  /** "HH:mm" 形式（JST） */
+  openTime: string;
+  /** "HH:mm" 形式（JST） */
+  closeTime: string;
 }
 
 export interface AdminWaitingEntry {
@@ -109,6 +117,7 @@ export interface AdminWaitingEntry {
 }
 
 export interface AdminDashboardData {
+  site: Site;
   waiting: AdminWaitingEntry[];
   waitingCounts: QueueStatus;
   today: { date: string; two: number; four: number };
@@ -117,6 +126,7 @@ export interface AdminDashboardData {
 
 export interface TalkThemeDto {
   id: number;
+  category: ThemeCategory;
   text: string;
   createdAt: string;
   updatedAt: string;

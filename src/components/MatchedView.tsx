@@ -1,6 +1,6 @@
 'use client';
 
-import { EVENT_DATE_TEXT, EVENT_PLACE, MATCH_NOTICE, TEAMS_GUIDE } from '@/lib/constants';
+import { COORDINATE_NOTICE, MATCH_NOTICE, TEAMS_GUIDE } from '@/lib/constants';
 import type { MatchMember, MatchResult } from '@/lib/types';
 
 interface Props {
@@ -13,27 +13,31 @@ function contactLabel(member: MatchMember): string {
 }
 
 export default function MatchedView({ result, onReset }: Props) {
+  // Teamsボタンが出ている（Teams利用者が2人以上いる）場合に、リンクに含まれない
+  // 内線利用者（自分以外）がいれば、個別に連絡してもらうよう案内する
+  const nonTeamsOthers = result.teamsLink
+    ? result.members.filter((member) => !member.isSelf && member.contactType !== 'TEAMS')
+    : [];
+
   return (
     <div className="space-y-5">
       {/* 1. マッチ成立メッセージ */}
       <section className="rounded-2xl bg-gradient-to-br from-brand-600 to-brand-900 p-6 text-center text-white shadow-card sm:p-8">
         <h1 className="text-3xl font-extrabold">🎉 マッチ成立！</h1>
-        <dl className="mt-5 space-y-2 text-lg">
-          <div className="flex flex-col items-center sm:flex-row sm:justify-center sm:gap-3">
-            <dt className="text-sm font-semibold text-brand-100">日時</dt>
-            <dd className="font-bold">：{EVENT_DATE_TEXT}</dd>
-          </div>
-          <div className="flex flex-col items-center sm:flex-row sm:justify-center sm:gap-3">
-            <dt className="text-sm font-semibold text-brand-100">集合場所</dt>
-            <dd className="font-bold">：{EVENT_PLACE}</dd>
-          </div>
-        </dl>
+        <p className="mt-4 text-sm text-brand-100">{COORDINATE_NOTICE}</p>
       </section>
 
-      {/* 2. トークテーマ */}
-      <section className="card">
+      {/* 2. トークテーマ（ライトトーク・じっくりトークを1つずつ） */}
+      <section className="card space-y-4">
         <h2 className="text-sm font-bold text-brand-700">💬 トークテーマ</h2>
-        <p className="mt-2 text-lg font-semibold leading-relaxed text-slate-800">{result.themeText}</p>
+        <div className="rounded-xl border border-brand-100 bg-brand-50 px-4 py-3">
+          <p className="text-xs font-bold text-brand-600">ライトトーク</p>
+          <p className="mt-1 text-lg font-semibold leading-relaxed text-slate-800">{result.lightThemeText}</p>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+          <p className="text-xs font-bold text-slate-500">じっくりトーク</p>
+          <p className="mt-1 text-lg font-semibold leading-relaxed text-slate-800">{result.deepThemeText}</p>
+        </div>
       </section>
 
       {/* 3. 参加メンバー */}
@@ -60,13 +64,18 @@ export default function MatchedView({ result, onReset }: Props) {
         </ul>
       </section>
 
-      {/* 4. Teamsチャットボタン / 5. Teams案内（全員Teams利用者の場合のみ） */}
+      {/* 4. Teamsチャットボタン / 5. Teams案内（Teams利用者が2人以上いる場合のみ） */}
       {result.teamsLink ? (
         <section className="card space-y-3">
           <a href={result.teamsLink} target="_blank" rel="noopener noreferrer" className="btn-primary w-full">
             Teamsチャットを開く
           </a>
           <p className="text-sm text-slate-600">{TEAMS_GUIDE}</p>
+          {nonTeamsOthers.length > 0 ? (
+            <p className="whitespace-pre-line text-sm font-medium text-amber-700">
+              {nonTeamsOthers.map((member) => `${member.name}さんには別途連絡してください。`).join('\n')}
+            </p>
+          ) : null}
         </section>
       ) : null}
 

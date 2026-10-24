@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError, apiFetch } from '@/lib/api';
-import { QUEUE_STATUS_CHANNEL, QUEUE_STATUS_EVENT } from '@/lib/realtime-channels';
+import { SITE_LABELS, SITES } from '@/lib/constants';
+import { QUEUE_STATUS_EVENT, queueStatusChannelName } from '@/lib/realtime-channels';
 import { getSupabaseBrowserClient } from '@/lib/supabase-client';
 import { formatJstTime } from '@/lib/time';
-import type { AdminDashboardData } from '@/lib/types';
+import type { AdminDashboardData, Site } from '@/lib/types';
 import { Alert, FullPageLoading, Spinner } from '../ui';
 import ThemeManager from './ThemeManager';
 
@@ -30,8 +31,7 @@ function StatCard({ title, value, unit }: { title: string; value: number; unit: 
   );
 }
 
-export default function AdminDashboard({ onUnauthorized, onLogout }: Props) {
-  const [tab, setTab] = useState<Tab>('status');
+function SiteStatusPanel({ site, onUnauthorized }: { site: Site; onUnauthorized: () => void }) {
   const [data, setData] = useState<AdminDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -41,7 +41,7 @@ export default function AdminDashboard({ onUnauthorized, onLogout }: Props) {
 
   const load = useCallback(async () => {
     try {
-      setData(await apiFetch<AdminDashboardData>('/api/admin/dashboard'));
+      setData(await apiFetch<AdminDashboardData>(`/api/admin/dashboard?site=${site}`));
       setError(null);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
@@ -52,10 +52,12 @@ export default function AdminDashboard({ onUnauthorized, onLogout }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [onUnauthorized]);
+  }, [onUnauthorized, site]);
 
-  // 初回取得 + 定期更新
+  // 拠点が切り替わったら再読込
   useEffect(() => {
+    setLoading(true);
+    setData(null);
     void load();
     const timer = setInterval(() => void load(), POLL_INTERVAL_MS);
     return () => clearInterval(timer);
@@ -65,7 +67,7 @@ export default function AdminDashboard({ onUnauthorized, onLogout }: Props) {
   useEffect(() => {
     const supabase = getSupabaseBrowserClient();
     const channel = supabase
-      .channel(QUEUE_STATUS_CHANNEL)
+      .channel(queueStatusChannelName(site))
       .on('broadcast', { event: QUEUE_STATUS_EVENT }, () => {
         if (refreshTimer.current) {
           clearTimeout(refreshTimer.current);
@@ -79,20 +81,22 @@ export default function AdminDashboard({ onUnauthorized, onLogout }: Props) {
         clearTimeout(refreshTimer.current);
       }
     };
-  }, [load]);
+  }, [load, site]);
 
   const handlePurge = async () => {
     if (purging) {
       return;
     }
-    if (!window.confirm('本当に削除しますか？')) {
+    if (!window.confirm(`本当に削除しますか？（${SITE_LABELS[site]}の待機データのみが対象です）`)) {
       return;
     }
     setPurging(true);
     setError(null);
     setNotice(null);
     try {
-      const result = await apiFetch<{ ok: boolean; deleted: number }>('/api/admin/queue', { method: 'DELETE' });
+      const result = await apiFetch<{ ok: boolean; deleted: number }>(`/api/admin/queue?site=${site}`, {
+        method: 'DELETE',
+      });
       setNotice(`全待機データを削除しました（${result.deleted}件）。`);
       await load();
     } catch (err) {
@@ -106,13 +110,102 @@ export default function AdminDashboard({ onUnauthorized, onLogout }: Props) {
     }
   };
 
+  if (loading && !data) {
+    return <FullPageLoading />;
+  }
+
+  return (
+    <div className="space-y-5">
+      {error ? <Alert tone="error">{error}</Alert> : null}
+      {notice ? <Alert tone="success">{notice}</Alert> : null}
+
+      {data ? (
+        <>
+          <section className="card">
+            <h2 className="text-lg font-bold text-brand-800">待機人数</h2>
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <StatCard title="2人マッチ待機" value={data.waitingCounts.two} unit="名" />
+              <StatCard title="4人マッチ待機" value={data.waitingCounts.four} unit="名" />
+            </div>
+          </section>
+
+          <section className="card">
+            <h2 className="text-lg font-bold text-brand-800">本日成立（{data.today.date}）</h2>
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <StatCard title="2人マッチ" value={data.today.two} unit="件" />
+              <StatCard title="4人マッチ" value={data.today.four} unit="件" />
+            </div>
+            <p className="mt-2 text-xs text-slate-500">日付が変わる（00:00）とリセットされます。</p>
+          </section>
+
+          <section className="card">
+            <h2 className="text-lg font-bold text-brand-800">現在待機中ユーザー（{data.waiting.length}名）</h2>
+            {data.waiting.length === 0 ? (
+              <p className="mt-3 text-sm text-slate-500">現在、待機中のユーザーはいません。</p>
+            ) : (
+              <div className="mt-3 overflow-x-auto">
+                <table className="w-full min-w-[640px] text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-brand-100 text-xs text-slate-500">
+                      <th className="py-2 pr-3 font-semibold">氏名</th>
+                      <th className="py-2 pr-3 font-semibold">部署</th>
+                      <th className="py-2 pr-3 font-semibold">Teams/内線</th>
+                      <th className="py-2 pr-3 font-semibold">マッチ種別</th>
+                      <th className="py-2 font-semibold">待機開始時刻</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {data.waiting.map((entry) => (
+                      <tr key={entry.id}>
+                        <td className="py-2 pr-3 font-medium text-slate-900">{entry.name}</td>
+                        <td className="py-2 pr-3">{entry.department}</td>
+                        <td className="py-2 pr-3 break-all">
+                          {entry.contactType === 'TEAMS' ? `Teams：${entry.contactValue}` : `内線：${entry.contactValue}`}
+                        </td>
+                        <td className="py-2 pr-3">{entry.matchSize}人</td>
+                        <td className="py-2 tabular-nums">{formatJstTime(entry.joinedAt)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+
+          <section className="card border-red-200">
+            <h2 className="text-lg font-bold text-red-700">緊急機能</h2>
+            <p className="mt-1 text-sm text-slate-600">
+              「{SITE_LABELS[site]}」の待機中データのみを削除します（他の拠点には影響しません）。
+              待機中の参加者にはキャンセルが通知されます。
+            </p>
+            <button type="button" onClick={() => void handlePurge()} disabled={purging} className="btn-danger mt-4">
+              {purging ? (
+                <>
+                  <Spinner />
+                  削除中...
+                </>
+              ) : (
+                '全待機データ削除'
+              )}
+            </button>
+          </section>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+export default function AdminDashboard({ onUnauthorized, onLogout }: Props) {
+  const [tab, setTab] = useState<Tab>('status');
+  const [site, setSite] = useState<Site>('gifu');
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold text-brand-800">管理画面</h1>
         <div className="flex gap-2">
           <a href="/" className="btn-secondary btn-sm">
-            参加画面へ
+            メニューへ
           </a>
           <button type="button" onClick={onLogout} className="btn-secondary btn-sm">
             ログアウト
@@ -146,84 +239,25 @@ export default function AdminDashboard({ onUnauthorized, onLogout }: Props) {
 
       {tab === 'themes' ? (
         <ThemeManager onUnauthorized={onUnauthorized} />
-      ) : loading && !data ? (
-        <FullPageLoading />
       ) : (
         <div className="space-y-5">
-          {error ? <Alert tone="error">{error}</Alert> : null}
-          {notice ? <Alert tone="success">{notice}</Alert> : null}
-
-          {data ? (
-            <>
-              <section className="card">
-                <h2 className="text-lg font-bold text-brand-800">待機人数</h2>
-                <div className="mt-3 grid grid-cols-2 gap-3">
-                  <StatCard title="2人マッチ待機" value={data.waitingCounts.two} unit="名" />
-                  <StatCard title="4人マッチ待機" value={data.waitingCounts.four} unit="名" />
-                </div>
-              </section>
-
-              <section className="card">
-                <h2 className="text-lg font-bold text-brand-800">本日成立（{data.today.date}）</h2>
-                <div className="mt-3 grid grid-cols-2 gap-3">
-                  <StatCard title="2人マッチ" value={data.today.two} unit="件" />
-                  <StatCard title="4人マッチ" value={data.today.four} unit="件" />
-                </div>
-                <p className="mt-2 text-xs text-slate-500">日付が変わる（00:00）とリセットされます。</p>
-              </section>
-
-              <section className="card">
-                <h2 className="text-lg font-bold text-brand-800">現在待機中ユーザー（{data.waiting.length}名）</h2>
-                {data.waiting.length === 0 ? (
-                  <p className="mt-3 text-sm text-slate-500">現在、待機中のユーザーはいません。</p>
-                ) : (
-                  <div className="mt-3 overflow-x-auto">
-                    <table className="w-full min-w-[640px] text-left text-sm">
-                      <thead>
-                        <tr className="border-b border-brand-100 text-xs text-slate-500">
-                          <th className="py-2 pr-3 font-semibold">氏名</th>
-                          <th className="py-2 pr-3 font-semibold">部署</th>
-                          <th className="py-2 pr-3 font-semibold">Teams/内線</th>
-                          <th className="py-2 pr-3 font-semibold">マッチ種別</th>
-                          <th className="py-2 font-semibold">待機開始時刻</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {data.waiting.map((entry) => (
-                          <tr key={entry.id}>
-                            <td className="py-2 pr-3 font-medium text-slate-900">{entry.name}</td>
-                            <td className="py-2 pr-3">{entry.department}</td>
-                            <td className="py-2 pr-3 break-all">
-                              {entry.contactType === 'TEAMS' ? `Teams：${entry.contactValue}` : `内線：${entry.contactValue}`}
-                            </td>
-                            <td className="py-2 pr-3">{entry.matchSize}人</td>
-                            <td className="py-2 tabular-nums">{formatJstTime(entry.joinedAt)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </section>
-
-              <section className="card border-red-200">
-                <h2 className="text-lg font-bold text-red-700">緊急機能</h2>
-                <p className="mt-1 text-sm text-slate-600">
-                  待機中のすべてのデータを削除します。待機中の参加者にはキャンセルが通知されます。
-                </p>
-                <button type="button" onClick={() => void handlePurge()} disabled={purging} className="btn-danger mt-4">
-                  {purging ? (
-                    <>
-                      <Spinner />
-                      削除中...
-                    </>
-                  ) : (
-                    '全待機データ削除'
-                  )}
-                </button>
-              </section>
-            </>
-          ) : null}
+          <div className="flex gap-2" role="tablist" aria-label="拠点の選択">
+            {SITES.map((s) => (
+              <button
+                key={s}
+                type="button"
+                role="tab"
+                aria-selected={site === s}
+                onClick={() => setSite(s)}
+                className={`rounded-full px-4 py-1.5 text-sm font-semibold transition ${
+                  site === s ? 'bg-brand-700 text-white' : 'bg-brand-50 text-brand-700 hover:bg-brand-100'
+                }`}
+              >
+                {SITE_LABELS[s]}
+              </button>
+            ))}
+          </div>
+          <SiteStatusPanel key={site} site={site} onUnauthorized={onUnauthorized} />
         </div>
       )}
     </div>

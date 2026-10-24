@@ -28,7 +28,9 @@ export const POST = route(async (request) => {
 
   const result = await checkTimeout(entryId, token);
   if (result.notFound || result.expired) {
-    await broadcastQueueStatus();
+    if (result.site) {
+      await broadcastQueueStatus(result.site);
+    }
     const ack: TimeoutCheckResult = { expired: true };
     return jsonResponse(ack);
   }

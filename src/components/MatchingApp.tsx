@@ -2,12 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError, apiFetch } from '@/lib/api';
-import { API_ROUTES } from '@/lib/constants';
+import { API_ROUTES, SITE_MATCH_SIZES } from '@/lib/constants';
 import {
   ENTRY_CANCELLED_EVENT,
   ENTRY_MATCH_EVENT,
   entryChannelName,
-  QUEUE_STATUS_CHANNEL,
+  queueStatusChannelName,
   QUEUE_STATUS_EVENT,
 } from '@/lib/realtime-channels';
 import { getSupabaseBrowserClient } from '@/lib/supabase-client';
@@ -19,6 +19,7 @@ import type {
   MatchSize,
   QueueStatus,
   ServiceStatus,
+  Site,
   TimeoutCheckResult,
 } from '@/lib/types';
 import { validateJoinInput } from '@/lib/validation';
@@ -29,6 +30,10 @@ import RegistrationForm from './RegistrationForm';
 import TimeoutView from './TimeoutView';
 import { Alert, Container, FullPageLoading } from './ui';
 import WaitingView from './WaitingView';
+
+interface Props {
+  site: Site;
+}
 
 type View =
   | { kind: 'loading' }
@@ -45,21 +50,26 @@ interface StoredSession {
   token: string;
 }
 
-const SESSION_KEY = 'ogori-match-session';
 const SERVICE_POLL_MS = 30_000;
 
-const INITIAL_VALUES: JoinFormValues = {
-  name: '',
-  department: '',
-  contactType: 'TEAMS',
-  teamsId: '',
-  extension: '',
-  matchSize: 2,
-};
+function sessionKey(site: Site): string {
+  return `ogori-match-session-${site}`;
+}
 
-function readStoredSession(): StoredSession | null {
+function initialValues(site: Site): JoinFormValues {
+  return {
+    name: '',
+    department: '',
+    contactType: 'TEAMS',
+    teamsId: '',
+    extension: '',
+    matchSize: SITE_MATCH_SIZES[site][0],
+  };
+}
+
+function readStoredSession(site: Site): StoredSession | null {
   try {
-    const raw = window.sessionStorage.getItem(SESSION_KEY);
+    const raw = window.sessionStorage.getItem(sessionKey(site));
     if (!raw) {
       return null;
     }
@@ -78,17 +88,17 @@ function readStoredSession(): StoredSession | null {
   return null;
 }
 
-function storeSession(session: StoredSession): void {
+function storeSession(site: Site, session: StoredSession): void {
   try {
-    window.sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    window.sessionStorage.setItem(sessionKey(site), JSON.stringify(session));
   } catch {
     // 保存できなくても動作には影響しない
   }
 }
 
-function clearSession(): void {
+function clearSession(site: Site): void {
   try {
-    window.sessionStorage.removeItem(SESSION_KEY);
+    window.sessionStorage.removeItem(sessionKey(site));
   } catch {
     // noop
   }
@@ -104,11 +114,11 @@ function sendLeaveBeacon(entry: StoredSession): void {
   }
 }
 
-export default function MatchingApp() {
+export default function MatchingApp({ site }: Props) {
   const [view, setView] = useState<View>({ kind: 'loading' });
   const [service, setService] = useState<ServiceStatus | null>(null);
   const [queueStatus, setQueueStatus] = useState<QueueStatus>({ two: 0, four: 0 });
-  const [values, setValues] = useState<JoinFormValues>(INITIAL_VALUES);
+  const [values, setValues] = useState<JoinFormValues>(() => initialValues(site));
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -155,7 +165,7 @@ export default function MatchingApp() {
     let cancelled = false;
 
     async function init() {
-      const stored = readStoredSession();
+      const stored = readStoredSession(site);
       if (stored) {
         try {
           const result = await apiFetch<MatchResult>(
@@ -166,7 +176,7 @@ export default function MatchingApp() {
           }
           return;
         } catch {
-          clearSession();
+          clearSession(site);
         }
       }
       if (!cancelled) {
@@ -178,9 +188,9 @@ export default function MatchingApp() {
     return () => {
       cancelled = true;
     };
-  }, [changeView, loadService]);
+  }, [changeView, loadService, site]);
 
-  // 受付状況の定期確認（15:00到達・09:00再開の自動切替）
+  // 受付状況の定期確認（終了時刻到達・翌営業開始の自動切替）
   useEffect(() => {
     const timer = setInterval(async () => {
       const kind = viewRef.current.kind;
@@ -200,18 +210,18 @@ export default function MatchingApp() {
     (result: MatchResult) => {
       const entry = entryRef.current;
       if (entry) {
-        storeSession(entry);
+        storeSession(site, entry);
       }
       changeView({ kind: 'matched', result });
     },
-    [changeView],
+    [changeView, site],
   );
 
-  // 待機人数（全体配信）をSupabase Realtimeで購読
+  // 待機人数（拠点ごとの全体配信）をSupabase Realtimeで購読
   useEffect(() => {
     const supabase = getSupabaseBrowserClient();
     const channel = supabase
-      .channel(QUEUE_STATUS_CHANNEL)
+      .channel(queueStatusChannelName(site))
       .on('broadcast', { event: QUEUE_STATUS_EVENT }, (message) => {
         setQueueStatus(message.payload as QueueStatus);
       })
@@ -220,7 +230,7 @@ export default function MatchingApp() {
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, []);
+  }, [site]);
 
   // 待機中: 自分のentryId専用チャンネルを購読し、マッチ成立・取り消しを受け取る
   useEffect(() => {
@@ -281,7 +291,7 @@ export default function MatchingApp() {
     if (submitting) {
       return;
     }
-    const validation = validateJoinInput(values);
+    const validation = validateJoinInput(values, site);
     if (!validation.ok) {
       setFieldErrors(validation.errors);
       setFormError(null);
@@ -295,7 +305,7 @@ export default function MatchingApp() {
     try {
       const ack = await apiFetch<JoinAck>(API_ROUTES.JOIN, {
         method: 'POST',
-        body: JSON.stringify(values),
+        body: JSON.stringify({ ...values, site }),
       });
 
       if (!ack.ok) {
@@ -331,7 +341,7 @@ export default function MatchingApp() {
     } finally {
       setSubmitting(false);
     }
-  }, [applyServiceStatus, changeView, finishMatched, submitting, values]);
+  }, [applyServiceStatus, changeView, finishMatched, site, submitting, values]);
 
   const handleCancel = useCallback(async () => {
     const entry = entryRef.current;
@@ -368,13 +378,14 @@ export default function MatchingApp() {
   }, [changeView, finishMatched]);
 
   const goToTop = useCallback(async () => {
-    clearSession();
+    clearSession(site);
     entryRef.current = null;
+    setValues(initialValues(site));
     setFormError(null);
     setFieldErrors({});
     changeView({ kind: 'loading' });
     await loadService();
-  }, [changeView, loadService]);
+  }, [changeView, loadService, site]);
 
   return (
     <Container>
@@ -389,10 +400,12 @@ export default function MatchingApp() {
         </section>
       )}
 
-      {view.kind === 'closed' && <ClosedView status={service} />}
+      {view.kind === 'closed' && <ClosedView status={service} site={site} />}
 
       {view.kind === 'form' && (
         <RegistrationForm
+          site={site}
+          service={service}
           values={values}
           errors={fieldErrors}
           formError={formError}

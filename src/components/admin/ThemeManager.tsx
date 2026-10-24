@@ -1,14 +1,19 @@
 'use client';
 
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { ApiError, apiFetch } from '@/lib/api';
 import { THEME_MAX_LENGTH } from '@/lib/constants';
-import type { TalkThemeDto } from '@/lib/types';
+import type { TalkThemeDto, ThemeCategory } from '@/lib/types';
 import { Alert, Spinner } from '../ui';
 
 interface Props {
   onUnauthorized: () => void;
 }
+
+const CATEGORY_LABELS: Record<ThemeCategory, string> = {
+  LIGHT: 'ライトトーク',
+  DEEP: 'じっくりトーク',
+};
 
 function validateText(text: string): string | null {
   const trimmed = text.trim();
@@ -22,6 +27,7 @@ function validateText(text: string): string | null {
 }
 
 export default function ThemeManager({ onUnauthorized }: Props) {
+  const [category, setCategory] = useState<ThemeCategory>('LIGHT');
   const [themes, setThemes] = useState<TalkThemeDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -58,6 +64,8 @@ export default function ThemeManager({ onUnauthorized }: Props) {
     void load();
   }, [load]);
 
+  const visibleThemes = useMemo(() => themes.filter((theme) => theme.category === category), [themes, category]);
+
   const handleAdd = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (busy) {
@@ -72,9 +80,12 @@ export default function ThemeManager({ onUnauthorized }: Props) {
     setBusy(true);
     setError(null);
     try {
-      await apiFetch('/api/admin/themes', { method: 'POST', body: JSON.stringify({ text: newText.trim() }) });
+      await apiFetch('/api/admin/themes', {
+        method: 'POST',
+        body: JSON.stringify({ category, text: newText.trim() }),
+      });
       setNewText('');
-      setNotice('トークテーマを追加しました。');
+      setNotice(`${CATEGORY_LABELS[category]}にトークテーマを追加しました。`);
       await load();
     } catch (err) {
       handleError(err);
@@ -95,7 +106,7 @@ export default function ThemeManager({ onUnauthorized }: Props) {
     setEditText('');
   };
 
-  const handleSave = async (id: number) => {
+  const handleSave = async (theme: TalkThemeDto) => {
     if (busy) {
       return;
     }
@@ -107,7 +118,10 @@ export default function ThemeManager({ onUnauthorized }: Props) {
     setBusy(true);
     setError(null);
     try {
-      await apiFetch(`/api/admin/themes/${id}`, { method: 'PUT', body: JSON.stringify({ text: editText.trim() }) });
+      await apiFetch(`/api/admin/themes/${theme.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ category: theme.category, text: editText.trim() }),
+      });
       cancelEdit();
       setNotice('トークテーマを更新しました。');
       await load();
@@ -155,10 +169,30 @@ export default function ThemeManager({ onUnauthorized }: Props) {
             <p className="mt-1 text-emerald-800">業務改善 / 他部署理解 / ノウハウ共有 / 生産性向上</p>
           </div>
         </div>
+        <p className="mt-3 text-xs text-slate-500">
+          マッチ成立時に「ライトトーク」「じっくりトーク」から1件ずつランダムに選ばれ、2つ表示されます。
+        </p>
       </section>
 
+      <div className="flex gap-2" role="tablist" aria-label="トークテーマのカテゴリ">
+        {(Object.keys(CATEGORY_LABELS) as ThemeCategory[]).map((key) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={category === key}
+            onClick={() => setCategory(key)}
+            className={`rounded-full px-4 py-1.5 text-sm font-semibold transition ${
+              category === key ? 'bg-brand-700 text-white' : 'bg-brand-50 text-brand-700 hover:bg-brand-100'
+            }`}
+          >
+            {CATEGORY_LABELS[key]}（{themes.filter((t) => t.category === key).length}）
+          </button>
+        ))}
+      </div>
+
       <section className="card">
-        <h2 className="text-lg font-bold text-brand-800">トークテーマを追加</h2>
+        <h2 className="text-lg font-bold text-brand-800">{CATEGORY_LABELS[category]}を追加</h2>
         <form onSubmit={handleAdd} noValidate className="mt-3 flex flex-col gap-3 sm:flex-row">
           <input
             type="text"
@@ -171,7 +205,7 @@ export default function ThemeManager({ onUnauthorized }: Props) {
             }}
             className="input flex-1"
             placeholder="例）最近試した業務改善の工夫を教えてください。"
-            aria-label="新しいトークテーマ"
+            aria-label={`新しい${CATEGORY_LABELS[category]}`}
           />
           <button type="submit" disabled={busy} className="btn-primary shrink-0">
             追加
@@ -183,16 +217,18 @@ export default function ThemeManager({ onUnauthorized }: Props) {
       {notice ? <Alert tone="success">{notice}</Alert> : null}
 
       <section className="card">
-        <h2 className="text-lg font-bold text-brand-800">トークテーマ一覧（{themes.length}件）</h2>
+        <h2 className="text-lg font-bold text-brand-800">
+          {CATEGORY_LABELS[category]}一覧（{visibleThemes.length}件）
+        </h2>
         {loading ? (
           <div className="flex justify-center py-8 text-brand-600">
             <Spinner className="h-8 w-8" />
           </div>
-        ) : themes.length === 0 ? (
+        ) : visibleThemes.length === 0 ? (
           <p className="mt-4 text-sm text-slate-500">トークテーマが登録されていません。</p>
         ) : (
           <ul className="mt-3 divide-y divide-slate-100">
-            {themes.map((theme) => (
+            {visibleThemes.map((theme) => (
               <li key={theme.id} className="py-3">
                 {editingId === theme.id ? (
                   <div className="flex flex-col gap-3 sm:flex-row">
@@ -206,7 +242,7 @@ export default function ThemeManager({ onUnauthorized }: Props) {
                       aria-label="トークテーマを編集"
                     />
                     <div className="flex shrink-0 gap-2">
-                      <button type="button" disabled={busy} onClick={() => void handleSave(theme.id)} className="btn-primary btn-sm">
+                      <button type="button" disabled={busy} onClick={() => void handleSave(theme)} className="btn-primary btn-sm">
                         保存
                       </button>
                       <button type="button" disabled={busy} onClick={cancelEdit} className="btn-secondary btn-sm">
