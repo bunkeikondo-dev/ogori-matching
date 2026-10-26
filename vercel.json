@@ -3,7 +3,7 @@
   "crons": [
     {
       "path": "/api/cron/daily-reset",
-      "schedule": "0 15 * * *"
+      "schedule": "31 0 * * *"
     }
   ]
 }
